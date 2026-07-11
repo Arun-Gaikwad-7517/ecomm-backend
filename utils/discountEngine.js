@@ -1,34 +1,36 @@
 /**
- * Calculates discounts based on store business rules.
- * 
+ * Calculates discounts based on the requested business rules.
+ *
  * Rules:
- * 1. Single T-Shirt Discount:
- *    If >= 1 T-Shirt purchased, 5% discount on T-Shirt subtotal.
- * 2. Bulk T-Shirt Discount:
- *    If > 5 T-Shirts purchased, T-Shirt discount becomes 7%.
- * 3. Tech Gadgets Group Discount:
- *    For every 5 gadgets purchased, apply +3% discount on gadgets subtotal. Capped at 20%.
- * 4. Category Volume Bonus:
- *    If >= 4 items purchased from a single category, apply an additional 4% discount
- *    on the overall order value. Evaluated independently per category.
- * 
+ * 1. Base Discount:
+ *    Applied separately per category when that category exists in the cart.
+ *    - T-Shirts: 5% if quantity >= 1
+ *    - Tech Gadgets: 5% if quantity >= 1
+ * 2. Quantity Discount:
+ *    Applied separately per category.
+ *    - T-Shirts: +2% for every 5 T-Shirts, capped at 20%
+ *    - Tech Gadgets: +3% for every 5 gadgets, capped at 30%
+ * 3. Additional Category Discount:
+ *    Applied separately to each category if that category exists in the cart.
+ *    - T-Shirts: +4%
+ *    - Tech Gadgets: +4%
+ *
  * Overall Cap:
  *    Maximum total cart discount can never exceed 20% of the subtotal.
  */
 function calculateDiscounts(items) {
   let tshirtCount = 0;
   let tshirtSubtotal = 0;
-  
+
   let gadgetCount = 0;
   let gadgetSubtotal = 0;
-  
+
   let totalSubtotal = 0;
-  
-  // First pass: Calculate category quantities and subtotals
+
   items.forEach(item => {
     const itemSubtotal = item.price * item.quantity;
     totalSubtotal += itemSubtotal;
-    
+
     if (item.category === 'T-Shirts') {
       tshirtCount += item.quantity;
       tshirtSubtotal += itemSubtotal;
@@ -38,52 +40,64 @@ function calculateDiscounts(items) {
     }
   });
 
-  // Determine individual discount rates
-  const tshirtRate = tshirtCount >= 1 ? (tshirtCount > 5 ? 0.07 : 0.05) : 0;
-  
-  const rawGadgetRate = gadgetCount >= 5 ? Math.floor(gadgetCount / 5) * 3 : 0;
-  const gadgetRate = Math.min(20, rawGadgetRate) / 100;
-  
-  const tshirtBonusRate = tshirtCount >= 4 ? 0.04 : 0;
-  const gadgetBonusRate = gadgetCount >= 4 ? 0.04 : 0;
-  const totalBonusRate = tshirtBonusRate + gadgetBonusRate; // Applied to all items
+  const tshirtBaseRate = tshirtCount >= 1 ? 0.05 : 0;
+  const tshirtQuantityBlocks = tshirtCount >= 5 ? Math.floor(tshirtCount / 5) : 0;
+  const tshirtQuantityRate = Math.min(tshirtQuantityBlocks * 0.02, 0.20);
+  const tshirtBonusRate = tshirtCount >= 1 ? 0.04 : 0;
 
-  // Second pass: Calculate raw item-level discounts
-  let calculatedItems = items.map(item => {
+  const gadgetBaseRate = gadgetCount >= 1 ? 0.05 : 0;
+  const gadgetQuantityBlocks = gadgetCount >= 5 ? Math.floor(gadgetCount / 5) : 0;
+  const gadgetQuantityRate = Math.min(gadgetQuantityBlocks * 0.03, 0.30);
+  const gadgetBonusRate = gadgetCount >= 1 ? 0.04 : 0;
+
+  const calculatedItems = items.map(item => {
     const origSubtotal = item.price * item.quantity;
     const itemDiscounts = [];
-    
-    // 1 & 2: Category specific discounts
-    if (item.category === 'T-Shirts' && tshirtRate > 0) {
+
+    if (item.category === 'T-Shirts' && tshirtBaseRate > 0) {
       itemDiscounts.push({
-        rule: `T-Shirt Discount (${tshirtRate * 100}%)`,
-        amount: origSubtotal * tshirtRate
-      });
-    } else if (item.category === 'Tech Gadgets' && gadgetRate > 0) {
-      itemDiscounts.push({
-        rule: `Tech Gadget Bulk (${gadgetRate * 100}%)`,
-        amount: origSubtotal * gadgetRate
+        rule: 'T-Shirt Base Discount (5%)',
+        amount: origSubtotal * tshirtBaseRate
       });
     }
-    
-    // 3: Category Quantity Bonus (applied proportionally to item subtotal)
-    if (totalBonusRate > 0) {
-      if (tshirtBonusRate > 0) {
-        itemDiscounts.push({
-          rule: 'T-Shirt Category Volume Bonus (4%)',
-          amount: origSubtotal * 0.04
-        });
-      }
-      if (gadgetBonusRate > 0) {
-        itemDiscounts.push({
-          rule: 'Tech Category Volume Bonus (4%)',
-          amount: origSubtotal * 0.04
-        });
-      }
+
+    if (item.category === 'T-Shirts' && tshirtQuantityRate > 0) {
+      itemDiscounts.push({
+        rule: `T-Shirt Quantity Discount (${Math.round(tshirtQuantityRate * 100)}%)`,
+        amount: origSubtotal * tshirtQuantityRate
+      });
     }
-    
+
+    if (item.category === 'T-Shirts' && tshirtBonusRate > 0) {
+      itemDiscounts.push({
+        rule: 'T-Shirt Category Bonus (4%)',
+        amount: origSubtotal * tshirtBonusRate
+      });
+    }
+
+    if (item.category === 'Tech Gadgets' && gadgetBaseRate > 0) {
+      itemDiscounts.push({
+        rule: 'Tech Gadget Base Discount (5%)',
+        amount: origSubtotal * gadgetBaseRate
+      });
+    }
+
+    if (item.category === 'Tech Gadgets' && gadgetQuantityRate > 0) {
+      itemDiscounts.push({
+        rule: `Tech Gadget Quantity Discount (${Math.round(gadgetQuantityRate * 100)}%)`,
+        amount: origSubtotal * gadgetQuantityRate
+      });
+    }
+
+    if (item.category === 'Tech Gadgets' && gadgetBonusRate > 0) {
+      itemDiscounts.push({
+        rule: 'Tech Gadget Category Bonus (4%)',
+        amount: origSubtotal * gadgetBonusRate
+      });
+    }
+
     const itemRawDiscount = itemDiscounts.reduce((sum, d) => sum + d.amount, 0);
-    
+
     return {
       product: item.product,
       name: item.name,
@@ -96,24 +110,20 @@ function calculateDiscounts(items) {
     };
   });
 
-  // Calculate cart-level totals
   const totalRawDiscount = calculatedItems.reduce((sum, item) => sum + item.rawDiscountTotal, 0);
   const capLimit = totalSubtotal * 0.20;
   const isCapped = totalRawDiscount > capLimit;
-  
-  // Proportional scaling factor if capped
   const scaleFactor = isCapped ? (capLimit / totalRawDiscount) : 1;
 
-  // Finalize item discounts with scaling applied
   const finalItems = calculatedItems.map(item => {
     const finalizedDiscounts = item.rawDiscounts.map(d => ({
       rule: d.rule,
       amount: Math.round(d.amount * scaleFactor * 100) / 100
     }));
-    
+
     const itemDiscountTotal = finalizedDiscounts.reduce((sum, d) => sum + d.amount, 0);
     const finalItemPayable = item.subtotal - itemDiscountTotal;
-    
+
     return {
       product: item.product,
       name: item.name,
@@ -127,43 +137,66 @@ function calculateDiscounts(items) {
     };
   });
 
-  // Calculate cart-level discounts list
   const appliedDiscounts = [];
-  
+
   if (tshirtCount >= 1) {
-    const amount = tshirtSubtotal * tshirtRate * scaleFactor;
+    const amount = tshirtSubtotal * tshirtBaseRate * scaleFactor;
     if (amount > 0) {
       appliedDiscounts.push({
-        rule: `T-Shirt Discount (${tshirtRate * 100}%)`,
+        rule: 'T-Shirt Base Discount (5%)',
         amount: Math.round(amount * 100) / 100
       });
     }
   }
-  
+
+  if (tshirtCount >= 5) {
+    const amount = tshirtSubtotal * tshirtQuantityRate * scaleFactor;
+    if (amount > 0) {
+      appliedDiscounts.push({
+        rule: `T-Shirt Quantity Discount (${Math.round(tshirtQuantityRate * 100)}%)`,
+        amount: Math.round(amount * 100) / 100
+      });
+    }
+  }
+
+  if (tshirtCount >= 1) {
+    const amount = tshirtSubtotal * tshirtBonusRate * scaleFactor;
+    if (amount > 0) {
+      appliedDiscounts.push({
+        rule: 'T-Shirt Category Bonus (4%)',
+        amount: Math.round(amount * 100) / 100
+      });
+    }
+  }
+
+  if (gadgetCount >= 1) {
+    const amount = gadgetSubtotal * gadgetBaseRate * scaleFactor;
+    if (amount > 0) {
+      appliedDiscounts.push({
+        rule: 'Tech Gadget Base Discount (5%)',
+        amount: Math.round(amount * 100) / 100
+      });
+    }
+  }
+
   if (gadgetCount >= 5) {
-    const amount = gadgetSubtotal * gadgetRate * scaleFactor;
+    const amount = gadgetSubtotal * gadgetQuantityRate * scaleFactor;
     if (amount > 0) {
       appliedDiscounts.push({
-        rule: `Tech Gadgets Discount (${gadgetRate * 100}%)`,
+        rule: `Tech Gadget Quantity Discount (${Math.round(gadgetQuantityRate * 100)}%)`,
         amount: Math.round(amount * 100) / 100
       });
     }
   }
-  
-  if (tshirtCount >= 4) {
-    const amount = totalSubtotal * 0.04 * scaleFactor;
-    appliedDiscounts.push({
-      rule: 'T-Shirt Category Bonus (4%)',
-      amount: Math.round(amount * 100) / 100
-    });
-  }
-  
-  if (gadgetCount >= 4) {
-    const amount = totalSubtotal * 0.04 * scaleFactor;
-    appliedDiscounts.push({
-      rule: 'Tech Category Bonus (4%)',
-      amount: Math.round(amount * 100) / 100
-    });
+
+  if (gadgetCount >= 1) {
+    const amount = gadgetSubtotal * gadgetBonusRate * scaleFactor;
+    if (amount > 0) {
+      appliedDiscounts.push({
+        rule: 'Tech Gadget Category Bonus (4%)',
+        amount: Math.round(amount * 100) / 100
+      });
+    }
   }
 
   const totalDiscount = finalItems.reduce((sum, item) => sum + item.totalDiscount, 0);
